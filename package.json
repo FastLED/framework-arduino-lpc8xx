@@ -1,0 +1,22 @@
+{
+  "name": "framework-arduino-lpc8xx",
+  "version": "0.1.0",
+  "description": "Arduino Wiring-based Framework for NXP LPC804 and LPC845 Cortex-M0+ MCUs",
+  "keywords": [
+    "framework",
+    "arduino",
+    "nxp",
+    "lpc8xx",
+    "lpc804",
+    "lpc845",
+    "cortex-m0plus"
+  ],
+  "homepage": "https://github.com/zackees/ArduinoCore-LPC8xx",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zackees/ArduinoCore-LPC8xx.git"
+  },
+  "frameworks": ["arduino"],
+  "platforms": ["nxplpc"],
+  "license": "BSD-3-Clause"
+}

@@ -142,10 +142,6 @@ Known caveats until native fbuild support lands:
   Linking and final-image assembly may still need a small platform-side recipe;
   the `extra_flags` and `ldscript` paths above match what `boards.txt` and
   `platform.txt` use.
-- A PlatformIO framework manifest (`package.json` with
-  `{"name":"framework-arduino-lpc8xx","frameworks":["arduino"]}`) is not yet
-  shipped at the repo root. Add one locally if PlatformIO refuses to recognize
-  the package override.
 
 ## Package Contents
 
@@ -153,6 +149,7 @@ Known caveats until native fbuild support lands:
 |---|---|
 | `boards.txt` | Board IDs, FQBNs, memory sizes, variants, upload defaults |
 | `boards/*.json` | PlatformIO board manifests (mirror of `boards.txt` for fbuild) |
+| `package.json` | PlatformIO framework manifest (lets `platform_packages` install this repo) |
 | `platform.txt` | GCC compile/link recipes, binary/hex output, OpenOCD upload recipe |
 | `programmers.txt` | CMSIS-DAP/OpenOCD default and manual ISP fallback |
 | `linker_scripts/gcc/*.ld` | LPC804/LPC845 flash and RAM layouts |
