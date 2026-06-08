@@ -1,0 +1,55 @@
+name: platformio
+
+# Attempts a full PlatformIO build for each LPC8xx target. This is expected
+# to fail today: the upstream `nxplpc` platform doesn't bundle an Arduino
+# framework builder, so the `platform_packages` override only goes so far.
+# Tracking issue: https://github.com/FastLED/fbuild/issues/513.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate board manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JSON-parse boards/*.json
+        run: |
+          set -euo pipefail
+          for f in boards/*.json; do
+            python3 -c "import json,sys; d=json.load(open('$f')); assert 'arduino' in d.get('frameworks',[]), f'$f missing arduino framework'; assert d['build']['mcu'], f'$f missing mcu'; print('ok:', '$f')"
+          done
+
+  build:
+    name: PlatformIO build (${{ matrix.env }})
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [lpc845brk, lpcxpresso804, lpcxpresso845max]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            pio-${{ runner.os }}-
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: pio system info
+        run: pio system info
+      - name: Build ${{ matrix.env }}
+        run: pio run -e ${{ matrix.env }}

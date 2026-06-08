@@ -1,6 +1,17 @@
 # ArduinoCore-LPC8xx
 
+[![arduino-cli](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli.yml)
+[![platformio](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio.yml)
+[![fbuild](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild.yml)
+
 Arduino-compatible support for NXP LPC804 and LPC845 Cortex-M0+ boards.
+
+> **Build status legend.** The `arduino-cli` badge reflects the supported
+> compile path. `platformio` and `fbuild` are expected red today — PlatformIO
+> has no native LPC8xx Arduino builder and fbuild's LPC8xx orchestrator
+> (Stage 2) is still pending — see [FastLED/fbuild#513](https://github.com/FastLED/fbuild/issues/513).
+> The workflows run anyway so the badges flip green automatically when upstream
+> support lands.
 
 This repository is structured as a standalone Arduino 1.5+ hardware package.
 It can be installed manually for Arduino IDE or Arduino CLI, and it is intended
@@ -59,8 +70,9 @@ PlatformIO has no native LPC8xx platform yet — see
 issue — so the snippet below pulls this repo in over the `nxplpc` platform with
 `platform_packages`.
 
-Drop a `platformio.ini` next to a sketch (or at the repo root) and point
-`src_dir` at the sketch folder:
+A runnable `platformio.ini` ships at the repo root and is exercised by the
+`platformio` and `fbuild` workflows above. The same file is reproduced below
+for convenience:
 
 ```ini
 ; Sample platformio.ini for fbuild against ArduinoCore-LPC8xx

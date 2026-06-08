@@ -1,0 +1,43 @@
+name: fbuild
+
+# Attempts a fbuild build for each LPC8xx target. Expected to fail today:
+# fbuild's LPC8xx orchestrator (Stage 2) is not implemented yet — see
+# FastLED/FastLED#2836 and FastLED/fbuild#513. Workflow is wired up now so
+# that the badge accurately tracks when upstream support lands.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: fbuild build (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [lpc845brk, lpcxpresso804, lpcxpresso845max]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry / git / target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/fbuild
+          key: fbuild-cli-${{ runner.os }}-stable
+      - name: Install fbuild from source
+        run: cargo install --git https://github.com/FastLED/fbuild --bin fbuild fbuild-cli || cargo install --git https://github.com/FastLED/fbuild fbuild-cli
+      - name: fbuild --version
+        run: fbuild --version
+      - name: Build ${{ matrix.env }}
+        run: fbuild build . -e ${{ matrix.env }}
