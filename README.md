@@ -7,6 +7,13 @@ It can be installed manually for Arduino IDE or Arduino CLI, and it is intended
 to be the package that fbuild consumes rather than a separate fbuild-only
 scaffold.
 
+> [!WARNING]
+> **Alpha status.** This repository currently compiles and links, but deployment
+> to LPC804/LPC845 hardware has not been tested end to end. Help is wanted to
+> lock in the deployment story and verify correct upload/debug behavior across
+> the supported boards and tools. AI-generated pull requests and issues are
+> welcome.
+
 ## Supported FQBNs
 
 | FQBN | Board | MCU | Board model | Status |
