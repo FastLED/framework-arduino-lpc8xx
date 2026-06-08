@@ -1,0 +1,12 @@
+name: platformio / lpc845brk
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    uses: ./.github/workflows/_platformio.yml
+    with:
+      platform: lpc845brk

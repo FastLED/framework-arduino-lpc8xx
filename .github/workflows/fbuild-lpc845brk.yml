@@ -1,0 +1,12 @@
+name: fbuild / lpc845brk
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    uses: ./.github/workflows/_fbuild.yml
+    with:
+      platform: lpc845brk

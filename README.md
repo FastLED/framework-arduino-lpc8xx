@@ -1,17 +1,22 @@
 # ArduinoCore-LPC8xx
 
-[![arduino-cli](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli.yml)
-[![platformio](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio.yml)
-[![fbuild](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild.yml)
+| platform | arduino-cli | platformio | fbuild |
+|---|---|---|---|
+| **lpc845brk** | [![arduino-cli / lpc845brk](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli-lpc845brk.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli-lpc845brk.yml) | [![platformio / lpc845brk](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio-lpc845brk.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio-lpc845brk.yml) | [![fbuild / lpc845brk](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild-lpc845brk.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild-lpc845brk.yml) |
+| **lpcxpresso804** | [![arduino-cli / lpcxpresso804](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli-lpcxpresso804.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli-lpcxpresso804.yml) | [![platformio / lpcxpresso804](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio-lpcxpresso804.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio-lpcxpresso804.yml) | [![fbuild / lpcxpresso804](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild-lpcxpresso804.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild-lpcxpresso804.yml) |
+| **lpcxpresso845max** | [![arduino-cli / lpcxpresso845max](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli-lpcxpresso845max.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/arduino-cli-lpcxpresso845max.yml) | [![platformio / lpcxpresso845max](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio-lpcxpresso845max.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/platformio-lpcxpresso845max.yml) | [![fbuild / lpcxpresso845max](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild-lpcxpresso845max.yml/badge.svg)](https://github.com/zackees/ArduinoCore-LPC8xx/actions/workflows/fbuild-lpcxpresso845max.yml) |
 
 Arduino-compatible support for NXP LPC804 and LPC845 Cortex-M0+ boards.
 
-> **Build status legend.** The `arduino-cli` badge reflects the supported
-> compile path. `platformio` and `fbuild` are expected red today — PlatformIO
-> has no native LPC8xx Arduino builder and fbuild's LPC8xx orchestrator
-> (Stage 2) is still pending — see [FastLED/fbuild#513](https://github.com/FastLED/fbuild/issues/513).
-> The workflows run anyway so the badges flip green automatically when upstream
-> support lands.
+> **Build status legend.** The `arduino-cli` column reflects the supported
+> compile path. `platformio` and `fbuild` columns are expected red today —
+> PlatformIO has no native LPC8xx Arduino builder and fbuild's LPC8xx
+> orchestrator (Stage 2) is still pending — see
+> [FastLED/fbuild#513](https://github.com/FastLED/fbuild/issues/513). The
+> workflows run anyway so the badges flip green automatically when upstream
+> support lands. Adding a new LPC platform = one row in this table plus three
+> 10-line workflow callers (one per tool) that invoke the matching
+> `_<tool>.yml` template under `.github/workflows/`.
 
 This repository is structured as a standalone Arduino 1.5+ hardware package.
 It can be installed manually for Arduino IDE or Arduino CLI, and it is intended

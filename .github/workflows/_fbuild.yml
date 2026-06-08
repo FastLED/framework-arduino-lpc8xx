@@ -1,0 +1,29 @@
+name: _fbuild
+
+# Reusable template: install fbuild from PyPI and run `fbuild build . -e
+# <platform>`. Expected red today — fbuild's LPC8xx orchestrator (Stage 2)
+# is pending FastLED/FastLED#2836 / FastLED/fbuild#513.
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+        description: "Board id, e.g. lpc845brk"
+
+jobs:
+  build:
+    name: fbuild / ${{ inputs.platform }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install fbuild
+        run: pip install --upgrade fbuild
+      - name: fbuild --version
+        run: fbuild --version
+      - name: fbuild build -e ${{ inputs.platform }}
+        run: fbuild build . -e ${{ inputs.platform }}

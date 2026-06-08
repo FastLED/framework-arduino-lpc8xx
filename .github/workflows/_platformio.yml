@@ -1,0 +1,43 @@
+name: _platformio
+
+# Reusable template: validate the PlatformIO board manifest and run
+# `pio run -e <platform>` for a single LPC8xx env. Expected red today
+# (no Arduino builder on `nxplpc`) — see FastLED/fbuild#513.
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+        description: "Board id, e.g. lpc845brk"
+
+jobs:
+  build:
+    name: platformio / ${{ inputs.platform }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ inputs.platform }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            pio-${{ runner.os }}-${{ inputs.platform }}-
+            pio-${{ runner.os }}-
+      - name: Validate boards/${{ inputs.platform }}.json
+        run: |
+          python3 -c "import json; d=json.load(open('boards/${{ inputs.platform }}.json')); assert 'arduino' in d.get('frameworks',[]); assert d['build']['mcu']; print('ok')"
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: pio system info
+        run: pio system info
+      - name: pio run -e ${{ inputs.platform }}
+        run: pio run -e ${{ inputs.platform }}

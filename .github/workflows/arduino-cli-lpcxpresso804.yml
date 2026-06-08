@@ -1,0 +1,12 @@
+name: arduino-cli / lpcxpresso804
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    uses: ./.github/workflows/_arduino-cli.yml
+    with:
+      platform: lpcxpresso804

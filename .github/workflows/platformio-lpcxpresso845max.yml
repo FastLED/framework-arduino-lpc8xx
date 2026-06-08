@@ -1,0 +1,12 @@
+name: platformio / lpcxpresso845max
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    uses: ./.github/workflows/_platformio.yml
+    with:
+      platform: lpcxpresso845max

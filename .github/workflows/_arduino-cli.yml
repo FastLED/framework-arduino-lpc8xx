@@ -1,0 +1,47 @@
+name: _arduino-cli
+
+# Reusable template: compile every example sketch for a single LPC8xx FQBN
+# using arduino-cli. Callers pass `platform` (the board id, which is also the
+# FQBN tail under `zackees:lpc8xx:<platform>`).
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+        description: "Board id, e.g. lpc845brk"
+
+jobs:
+  compile:
+    name: arduino-cli / ${{ inputs.platform }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ARM GCC toolchain
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:sam
+      - name: Link local hardware package
+        run: |
+          mkdir -p "$HOME/Arduino/hardware/zackees"
+          ln -s "$GITHUB_WORKSPACE" "$HOME/Arduino/hardware/zackees/lpc8xx"
+      - name: Compile examples
+        run: |
+          set -euo pipefail
+          for sketch in \
+            examples/Blink \
+            examples/BlinkWithoutDelay \
+            examples/Button \
+            examples/AnalogReadSerial \
+            examples/Fading \
+            examples/ToneMelody \
+            examples/Serial \
+            examples/SPILoopback \
+            examples/I2CScanner \
+            examples/FastLEDClocklessSmoke \
+            examples/FastLEDSpiSmoke
+          do
+            arduino-cli compile --fqbn zackees:lpc8xx:${{ inputs.platform }} "$sketch"
+          done

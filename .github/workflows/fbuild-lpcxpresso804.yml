@@ -1,0 +1,12 @@
+name: fbuild / lpcxpresso804
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    uses: ./.github/workflows/_fbuild.yml
+    with:
+      platform: lpcxpresso804
