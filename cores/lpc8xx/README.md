@@ -13,7 +13,7 @@ maps and default UART/SPI pins live under `variants/<part>/`.
 | `HardwareSerial.{h,cpp}` | Blocking USART0 `Serial` implementation. |
 | `SPI.{h,cpp}` | Blocking SPI0 implementation. |
 | `main.cpp` | Framework-owned `main()` -> `init`, `initVariant`, `setup`, `loop`. |
-| `lpc8xx_runtime.cpp` | Minimal freestanding C++ runtime symbols for bare-metal links. |
+| `lpc8xx_runtime.cpp` | Minimal freestanding C++ runtime symbols and abort/pure-virtual reset handling. |
 
 The implementation is intentionally small. It is enough for FastLED QA builds
 and first board bring-up without importing the full MCUXpresso SDK into the
