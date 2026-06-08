@@ -9,14 +9,16 @@
 Arduino-compatible support for NXP LPC804 and LPC845 Cortex-M0+ boards.
 
 > **Build status legend.** The `arduino-cli` column reflects the supported
-> compile path. `platformio` and `fbuild` columns are expected red today —
-> PlatformIO has no native LPC8xx Arduino builder and fbuild's LPC8xx
-> orchestrator (Stage 2) is still pending — see
-> [FastLED/fbuild#513](https://github.com/FastLED/fbuild/issues/513). The
-> workflows run anyway so the badges flip green automatically when upstream
-> support lands. Adding a new LPC platform = one row in this table plus three
-> 10-line workflow callers (one per tool) that invoke the matching
-> `_<tool>.yml` template under `.github/workflows/`.
+> compile path. The `platformio` column now drives the build through
+> [zackees/platform-nxplpc-arduino](https://github.com/zackees/platform-nxplpc-arduino),
+> a focused fork of `platformio/platform-nxplpc` that adds the Arduino
+> framework binding for LPC8xx. The `fbuild` column reads the same
+> `platformio.ini` and tracks the same code path — once the platform fork is
+> stable in PlatformIO it should turn green for fbuild too. Tracking:
+> [FastLED/fbuild#513](https://github.com/FastLED/fbuild/issues/513).
+> Adding a new LPC platform = one row in this table plus three 10-line
+> workflow callers (one per tool) that invoke the matching `_<tool>.yml`
+> template under `.github/workflows/`.
 
 This repository is structured as a standalone Arduino 1.5+ hardware package.
 It can be installed manually for Arduino IDE or Arduino CLI, and it is intended
@@ -68,49 +70,24 @@ not present yet, install an Arduino ARM core such as `arduino:sam` first.
 ## PlatformIO / fbuild
 
 This package also ships PlatformIO board manifests under `boards/`
-(`lpc845brk.json`, `lpcxpresso804.json`, `lpcxpresso845max.json`) so the same
-core can drive a PlatformIO build via [fbuild](https://github.com/FastLED/fbuild).
-PlatformIO has no native LPC8xx platform yet — see
-[FastLED/fbuild#513](https://github.com/FastLED/fbuild/issues/513) for the tracking
-issue — so the snippet below pulls this repo in over the `nxplpc` platform with
-`platform_packages`.
+(`lpc845brk.json`, `lpcxpresso804.json`, `lpcxpresso845max.json`) and a
+runnable `platformio.ini` at the repo root that drives the build through
+[zackees/platform-nxplpc-arduino](https://github.com/zackees/platform-nxplpc-arduino),
+a focused fork of the upstream `nxplpc` platform with an Arduino framework
+binding for LPC8xx.
 
-A runnable `platformio.ini` ships at the repo root and is exercised by the
-`platformio` and `fbuild` workflows above. The same file is reproduced below
-for convenience:
+The same `platformio.ini` is consumed by [fbuild](https://github.com/FastLED/fbuild)
+— see [FastLED/fbuild#513](https://github.com/FastLED/fbuild/issues/513) for
+the broader tracking issue.
 
 ```ini
-; Sample platformio.ini for fbuild against ArduinoCore-LPC8xx
-;
-; Usage:
-;   fbuild --env lpc845brk
-;   fbuild --env lpcxpresso804
-;   fbuild --env lpcxpresso845max
-
 [platformio]
 default_envs = lpc845brk
 src_dir = examples/Blink
 
 [env]
-platform = nxplpc
+platform = https://github.com/zackees/platform-nxplpc-arduino.git
 framework = arduino
-platform_packages =
-    framework-arduino-lpc8xx @ https://github.com/zackees/ArduinoCore-LPC8xx.git#main
-boards_dir = ${platformio.packages_dir}/framework-arduino-lpc8xx/boards
-build_unflags = -std=gnu++14
-build_flags =
-    -mcpu=cortex-m0plus
-    -mthumb
-    -Os
-    -ffunction-sections
-    -fdata-sections
-    -fno-common
-    -fno-rtti
-    -fno-exceptions
-    -fno-threadsafe-statics
-    -fno-use-cxa-atexit
-    -std=gnu++11
-    -DARDUINO_ARCH_LPC8XX
 upload_protocol = cmsis-dap
 debug_tool = cmsis-dap
 
@@ -125,23 +102,10 @@ board_build.ldscript = ${platformio.packages_dir}/framework-arduino-lpc8xx/linke
 [env:lpcxpresso845max]
 board = lpcxpresso845max
 board_build.ldscript = ${platformio.packages_dir}/framework-arduino-lpc8xx/linker_scripts/gcc/lpc845_flash.ld
-
-; FastLED smoke test — mirrors examples/FastLEDClocklessSmoke gating
-[env:lpc845brk-fastled]
-extends = env:lpc845brk
-lib_deps = fastled/FastLED@^3.7.0
-build_flags =
-    ${env.build_flags}
-    -DLPC8XX_ENABLE_FASTLED_EXAMPLE
 ```
 
-Known caveats until native fbuild support lands:
-
-- The `nxplpc` platform doesn't bundle an Arduino builder yet, so this config
-  leans on the upstream platform plus this repo's `boards/` and Arduino core.
-  Linking and final-image assembly may still need a small platform-side recipe;
-  the `extra_flags` and `ldscript` paths above match what `boards.txt` and
-  `platform.txt` use.
+Run with `pio run -e lpc845brk` or `fbuild build . -e lpc845brk`. Board
+manifests are auto-discovered from `boards/` (default `boards_dir`).
 
 ## Package Contents
 
