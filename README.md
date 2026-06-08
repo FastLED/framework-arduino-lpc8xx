@@ -55,7 +55,7 @@ This package also ships PlatformIO board manifests under `boards/`
 (`lpc845brk.json`, `lpcxpresso804.json`, `lpcxpresso845max.json`) so the same
 core can drive a PlatformIO build via [fbuild](https://github.com/FastLED/fbuild).
 PlatformIO has no native LPC8xx platform yet — see
-[FastLED/fbuild#1](https://github.com/FastLED/fbuild/issues/1) for the tracking
+[FastLED/fbuild#513](https://github.com/FastLED/fbuild/issues/513) for the tracking
 issue — so the snippet below pulls this repo in over the `nxplpc` platform with
 `platform_packages`.
 
