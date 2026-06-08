@@ -1,0 +1,32 @@
+{
+  "build": {
+    "core": "lpc8xx",
+    "cpu": "cortex-m0plus",
+    "extra_flags": "-DCPU_LPC845M301JBD64 -D__LPC845__ -DLPC845 -DARDUINO_LPCXPRESSO845MAX",
+    "f_cpu": "30000000L",
+    "mcu": "lpc845",
+    "variant": "lpcxpresso845max"
+  },
+  "debug": {
+    "jlink_device": "LPC845M301JBD64",
+    "openocd_target": "lpc84x.cfg",
+    "svd_path": "LPC845.svd"
+  },
+  "frameworks": [
+    "arduino"
+  ],
+  "name": "NXP LPCXpresso845-MAX",
+  "upload": {
+    "maximum_ram_size": 16384,
+    "maximum_size": 65536,
+    "protocol": "cmsis-dap",
+    "protocols": [
+      "cmsis-dap",
+      "jlink",
+      "blackmagic",
+      "isp"
+    ]
+  },
+  "url": "https://www.nxp.com/design/microcontrollers-developer-resources/lpcxpresso-boards/lpcxpresso845-max-development-board:OM13097",
+  "vendor": "NXP"
+}

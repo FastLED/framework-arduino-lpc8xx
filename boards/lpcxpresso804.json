@@ -1,0 +1,32 @@
+{
+  "build": {
+    "core": "lpc8xx",
+    "cpu": "cortex-m0plus",
+    "extra_flags": "-DCPU_LPC804M101JDH24 -D__LPC804__ -DLPC804 -DARDUINO_LPCXPRESSO804",
+    "f_cpu": "15000000L",
+    "mcu": "lpc804",
+    "variant": "lpcxpresso804"
+  },
+  "debug": {
+    "jlink_device": "LPC804M101JDH24",
+    "openocd_target": "lpc8xx.cfg",
+    "svd_path": "LPC804.svd"
+  },
+  "frameworks": [
+    "arduino"
+  ],
+  "name": "NXP LPCXpresso804",
+  "upload": {
+    "maximum_ram_size": 4096,
+    "maximum_size": 32768,
+    "protocol": "cmsis-dap",
+    "protocols": [
+      "cmsis-dap",
+      "jlink",
+      "blackmagic",
+      "isp"
+    ]
+  },
+  "url": "https://www.nxp.com/design/microcontrollers-developer-resources/lpcxpresso-boards/lpcxpresso804-development-board:OM40001",
+  "vendor": "NXP"
+}
