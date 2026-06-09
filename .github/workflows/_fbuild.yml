@@ -1,8 +1,9 @@
 name: _fbuild
 
 # Reusable template: install fbuild from PyPI and run `fbuild build . -e
-# <platform>`. Expected red today — fbuild's LPC8xx orchestrator (Stage 2)
-# is pending FastLED/FastLED#2836 / FastLED/fbuild#513.
+# <platform>`. Mirrors the caching strategy from _platformio.yml so the
+# ARM GCC toolchain (~1.1 GB), framework checkouts, and compile cache
+# survive across runs.
 
 on:
   workflow_call:
@@ -21,6 +22,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # Mirror PlatformIO's cache approach: hold onto fbuild's per-tool
+      # state directory across runs so we don't re-fetch the ARM GCC
+      # toolchain (~1.1 GB) and re-clone framework-arduino-lpc8xx every
+      # time. Key is bound to `platformio.ini` (so a platform/framework
+      # change invalidates), with progressive restore-keys so a partial
+      # match still skips the heavy downloads.
+      - name: Cache fbuild prod tools + compile cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.fbuild/prod/cache/toolchains
+            ~/.fbuild/prod/cache/platforms
+            ~/.fbuild/prod/cache/archives
+            ~/.fbuild/prod/cache/core
+            ~/.fbuild/prod/cache/installed
+            ~/.fbuild/prod/cache/index.sqlite
+          key: fbuild-${{ runner.os }}-${{ inputs.platform }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            fbuild-${{ runner.os }}-${{ inputs.platform }}-
+            fbuild-${{ runner.os }}-
       - name: Install fbuild
         run: pip install --upgrade fbuild
       - name: fbuild --version
