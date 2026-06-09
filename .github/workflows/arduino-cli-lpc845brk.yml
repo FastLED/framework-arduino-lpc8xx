@@ -1,6 +1,7 @@
 name: arduino-cli / lpc845brk
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]

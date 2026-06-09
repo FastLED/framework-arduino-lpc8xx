@@ -1,6 +1,7 @@
 name: arduino-cli / lpcxpresso845max
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
