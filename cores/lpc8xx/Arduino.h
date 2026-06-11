@@ -79,6 +79,7 @@ void noTone(pin_size_t pin);
 
 void init(void);
 void initVariant(void);
+void init_systick(void);
 
 void setup(void);
 void loop(void);

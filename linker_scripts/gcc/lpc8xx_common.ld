@@ -2,56 +2,11 @@ ENTRY(Reset_Handler)
 
 SECTIONS
 {
-  .vectors ORIGIN(FLASH) :
+  .isr_vector :
   {
-    LONG(_estack)
-    LONG(Reset_Handler + 1)
-    LONG(NMI_Handler + 1)
-    LONG(HardFault_Handler + 1)
-    LONG(0)
-    LONG(0)
-    LONG(0)
-    LONG(0 - (_estack + (Reset_Handler + 1) + (NMI_Handler + 1) + (HardFault_Handler + 1)))
-    LONG(0)
-    LONG(0)
-    LONG(0)
-    LONG(SVC_Handler + 1)
-    LONG(0)
-    LONG(0)
-    LONG(PendSV_Handler + 1)
-    LONG(SysTick_Handler + 1)
-    LONG(Default_Handler + 1) /* IRQ0 */
-    LONG(Default_Handler + 1) /* IRQ1 */
-    LONG(Default_Handler + 1) /* IRQ2 */
-    LONG(Default_Handler + 1) /* IRQ3 */
-    LONG(Default_Handler + 1) /* IRQ4 */
-    LONG(Default_Handler + 1) /* IRQ5 */
-    LONG(Default_Handler + 1) /* IRQ6 */
-    LONG(Default_Handler + 1) /* IRQ7 */
-    LONG(Default_Handler + 1) /* IRQ8 */
-    LONG(Default_Handler + 1) /* IRQ9 */
-    LONG(Default_Handler + 1) /* IRQ10 */
-    LONG(Default_Handler + 1) /* IRQ11 */
-    LONG(Default_Handler + 1) /* IRQ12 */
-    LONG(Default_Handler + 1) /* IRQ13 */
-    LONG(Default_Handler + 1) /* IRQ14 */
-    LONG(Default_Handler + 1) /* IRQ15 */
-    LONG(Default_Handler + 1) /* IRQ16 */
-    LONG(Default_Handler + 1) /* IRQ17 */
-    LONG(Default_Handler + 1) /* IRQ18 */
-    LONG(Default_Handler + 1) /* IRQ19 */
-    LONG(Default_Handler + 1) /* IRQ20 */
-    LONG(Default_Handler + 1) /* IRQ21 */
-    LONG(Default_Handler + 1) /* IRQ22 */
-    LONG(Default_Handler + 1) /* IRQ23 */
-    LONG(Default_Handler + 1) /* IRQ24 */
-    LONG(Default_Handler + 1) /* IRQ25 */
-    LONG(Default_Handler + 1) /* IRQ26 */
-    LONG(Default_Handler + 1) /* IRQ27 */
-    LONG(Default_Handler + 1) /* IRQ28 */
-    LONG(Default_Handler + 1) /* IRQ29 */
-    LONG(Default_Handler + 1) /* IRQ30 */
-    LONG(Default_Handler + 1) /* IRQ31 */
+    . = ALIGN(4);
+    KEEP(*(.isr_vector))  /* Vector table from startup C file */
+    . = ALIGN(4);
   } > FLASH
 
   .crp 0x000002FC :
@@ -105,8 +60,3 @@ SECTIONS
     . = ALIGN(8);
   } > RAM
 }
-
-PROVIDE(NMI_Handler = Default_Handler);
-PROVIDE(HardFault_Handler = Default_Handler);
-PROVIDE(SVC_Handler = Default_Handler);
-PROVIDE(PendSV_Handler = Default_Handler);

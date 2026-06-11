@@ -23,7 +23,7 @@ static uint32_t ticks_per_us(void) {
     return SystemCoreClock / 1000000UL;
 }
 
-static void init_systick(void) {
+void init_systick(void) {
     if (g_systick_started) {
         return;
     }
@@ -39,11 +39,6 @@ static void init_systick(void) {
     LPC8XX_SYSTICK->CTRL =
         SYSTICK_CTRL_CLKSOURCE | SYSTICK_CTRL_TICKINT | SYSTICK_CTRL_ENABLE;
     g_systick_started = 1u;
-}
-
-void init(void) {
-    lpc8xx_basic_peripheral_init();
-    init_systick();
 }
 
 void SysTick_Handler(void) {

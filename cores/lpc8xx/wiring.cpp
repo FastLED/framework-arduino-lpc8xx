@@ -16,6 +16,8 @@ void init(void) {
     // Enable clocks for basic peripherals needed by Arduino
     lpc8xx_basic_peripheral_init();  // GPIO, IOCON, SWM (already defined in variant.cpp's initVariant)
     
+    init_systick();
+
     // Note: Timer/UART/SPI/ADC clocks are enabled on-demand by their respective classes
 }
 
