@@ -2,6 +2,7 @@
 // Minimal freestanding C++ runtime support for bare-metal builds.
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>  // malloc / free
 
 #include "lpc8xx_registers.h"
 
@@ -32,8 +33,14 @@ static void lpc8xx_system_reset(void) {
 extern "C" {
 
 void *__dso_handle __attribute__((weak)) = 0;
-char end __attribute__((weak));
-char _end __attribute__((weak));
+
+// `end` / `_end` are NOT defined here. They are the heap-base symbols newlib's
+// `_sbrk` references; the linker script (`linker_scripts/gcc/lpc8xx_common.ld`)
+// defines them with a forced assignment at the top of `.bss`. Declaring them
+// as weak object-file symbols here would PROVIDE-suppress the script's
+// definition (a weak def in any object counts as "defined" for `PROVIDE`),
+// causing `end` to resolve to an arbitrary address inside `.bss` and the heap
+// to grow over live `.bss` data on the first `malloc`. See the script comment.
 
 __attribute__((noreturn)) void abort(void) {
     lpc8xx_abort_pause();
@@ -48,30 +55,53 @@ __attribute__((noreturn)) void __cxa_pure_virtual(void) {
 
 }
 
+// --- operator new / operator new[] -------------------------------------------
+// `-nostartfiles` bare-metal links do not pull libstdc++_nano, so the standard
+// `operator new` / `operator new[]` are unresolved. Provide thin malloc-backed
+// implementations (matching the existing `operator delete` set below). Both
+// sizes are funneled through `malloc`; on a freestanding embedded target we
+// don't throw on allocation failure — callers that need detection should
+// invoke `malloc` directly.
+void *operator new(unsigned int size) {
+    return malloc(size);
+}
+
+void *operator new(unsigned long size) {
+    return malloc(size);
+}
+
+void *operator new[](unsigned int size) {
+    return malloc(size);
+}
+
+void *operator new[](unsigned long size) {
+    return malloc(size);
+}
+
 void operator delete(void *ptr) noexcept {
-    (void)ptr;
+    free(ptr);
 }
 
 void operator delete(void *ptr, unsigned int size) noexcept {
-    (void)ptr;
     (void)size;
+    free(ptr);
 }
 
 void operator delete(void *ptr, unsigned long size) noexcept {
-    (void)ptr;
     (void)size;
+    free(ptr);
 }
 
 void operator delete[](void *ptr) noexcept {
-    (void)ptr;
+    free(ptr);
 }
 
 void operator delete[](void *ptr, unsigned int size) noexcept {
-    (void)ptr;
     (void)size;
+    free(ptr);
 }
 
 void operator delete[](void *ptr, unsigned long size) noexcept {
-    (void)ptr;
     (void)size;
+    free(ptr);
 }
