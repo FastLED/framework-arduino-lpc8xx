@@ -121,3 +121,11 @@ void Reset_Handler(void) {
     for (;;) {
     }
 }
+
+// newlib's __libc_init_array (called above) ends with a call to _init; the
+// matching __libc_fini_array calls _fini. These are normally supplied by
+// crti.o/crtn.o, which a -nostartfiles bare-metal link does not pull in,
+// leaving an undefined reference. Constructors run purely via the linker's
+// .init_array section, so empty weak stubs satisfy the references.
+__attribute__((weak)) void _init(void) {}
+__attribute__((weak)) void _fini(void) {}
