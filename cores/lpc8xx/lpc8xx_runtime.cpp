@@ -70,30 +70,19 @@ void *operator new[](unsigned int size) {
     return malloc(size);
 }
 
-void operator delete(void *ptr) noexcept {
+// All variants route through `free(ptr)`. The sized overloads exist so the
+// language ABI is satisfied; on a freestanding nosys target there is no
+// sized-aware free, so the size hint is discarded. Inlining keeps the code
+// footprint to a single `free` thunk shared by every C++ deallocation. (Note:
+// on this 32-bit ABI `unsigned int == unsigned long` widthwise but the
+// language treats them as distinct overloads.)
+inline void lpc8xx_free(void *ptr) noexcept {
     free(ptr);
 }
 
-void operator delete(void *ptr, unsigned int size) noexcept {
-    (void)size;
-    free(ptr);
-}
-
-void operator delete(void *ptr, unsigned long size) noexcept {
-    (void)size;
-    free(ptr);
-}
-
-void operator delete[](void *ptr) noexcept {
-    free(ptr);
-}
-
-void operator delete[](void *ptr, unsigned int size) noexcept {
-    (void)size;
-    free(ptr);
-}
-
-void operator delete[](void *ptr, unsigned long size) noexcept {
-    (void)size;
-    free(ptr);
-}
+void operator delete(void *ptr) noexcept { lpc8xx_free(ptr); }
+void operator delete(void *ptr, unsigned int) noexcept { lpc8xx_free(ptr); }
+void operator delete(void *ptr, unsigned long) noexcept { lpc8xx_free(ptr); }
+void operator delete[](void *ptr) noexcept { lpc8xx_free(ptr); }
+void operator delete[](void *ptr, unsigned int) noexcept { lpc8xx_free(ptr); }
+void operator delete[](void *ptr, unsigned long) noexcept { lpc8xx_free(ptr); }
