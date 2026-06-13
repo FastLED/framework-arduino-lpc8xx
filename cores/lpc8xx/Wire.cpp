@@ -101,3 +101,9 @@ int TwoWire::available(void) { return impl().available(); }
 int TwoWire::read(void) { return impl().read(); }
 int TwoWire::peek(void) { return impl().peek(); }
 void TwoWire::flush(void) { impl().flush(); }
+
+// Conversion to the underlying Stream — returns a reference to the lazily-
+// constructed `TwoWireImpl` (which IS-A `Stream`). Only referenced when
+// callers actually treat `Wire` as a `Stream`; otherwise --gc-sections drops
+// this conversion (and, transitively, the rest of the impl).
+TwoWire::operator Stream&() { return impl(); }

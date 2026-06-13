@@ -5,6 +5,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Forward-declare Stream so the conversion operator below resolves without
+// pulling Stream's full definition (and its virtual function table) into
+// every TU that includes Wire.h.
+class Stream;
+
 #define BUFFER_LENGTH 32
 
 // TwoWire — proxy facade for the I2C / Wire library.
@@ -20,10 +25,12 @@
 // dtor (registered via `__cxa_atexit`) anchored everything. On the 64 KB-
 // FLASH LPC845, that alone could tip the link over budget.
 //
-// Trade-off: `TwoWire` is no longer a `Stream` subclass — `Stream& s = Wire;`
-// no longer compiles. Direct `Wire.begin()` / `Wire.write()` calls work as
-// before. Sketches that need polymorphic `Stream*` access to Wire can
-// instantiate a local `TwoWire` (or build the impl directly).
+// Stream-polymorphism: `TwoWire` no longer inherits from `Stream`, but it
+// DOES provide an implicit `operator Stream&()` that returns a reference to
+// the (lazily-constructed) underlying impl — itself a `Stream`. Existing
+// patterns like `Stream& s = Wire; s.write(...);` keep working. The
+// conversion operator is dead code if the sketch never uses it, so
+// `--gc-sections` still strips the impl in the common case.
 class TwoWire {
 public:
     void begin(void);
@@ -46,6 +53,12 @@ public:
     int read(void);
     int peek(void);
     void flush(void);
+
+    // Implicit conversion to the underlying Stream so existing code that
+    // expects `Stream& s = Wire;` or passes Wire where a Stream& is required
+    // continues to compile. Forwards to the lazily-constructed singleton —
+    // if no caller uses this operator, the linker strips it.
+    operator Stream&();
 };
 
 extern TwoWire Wire;
