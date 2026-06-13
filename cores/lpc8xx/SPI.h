@@ -34,6 +34,11 @@ private:
     uint8_t _dataMode;
 };
 
+// SPIClass — trivially-constructible proxy facade for SPI. Methods delegate
+// to a function-local-static implementation defined in SPI.cpp. The global
+// `SPI` instance occupies 1 byte; the heavy SPI register-banging code only
+// gets linked in if a sketch actually calls `SPI.something()`. See Wire.h
+// for the same pattern (and the rationale).
 class SPIClass {
 public:
     void begin(void);
@@ -48,14 +53,6 @@ public:
     void setClockDivider(uint8_t divider);
     void setBitOrder(uint8_t order);
     void setDataMode(uint8_t mode);
-
-private:
-    uint8_t _divider = SPI_CLOCK_DIV4;
-    uint8_t _bitOrder = MSBFIRST;
-    uint8_t _dataMode = SPI_MODE0;
-    bool _begun = false;
-    void applyConfig(void);
-    void applySettings(SPISettings settings);
 };
 
 extern SPIClass SPI;

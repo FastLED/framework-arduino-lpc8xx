@@ -5,11 +5,26 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "Stream.h"
-
 #define BUFFER_LENGTH 32
 
-class TwoWire : public Stream {
+// TwoWire — proxy facade for the I2C / Wire library.
+//
+// `class TwoWire` is intentionally a trivially-constructible empty proxy: no
+// members, no virtual functions, no `Stream` inheritance. Methods forward
+// to a function-local-static implementation defined in Wire.cpp.
+//
+// Why: the previous `class TwoWire : public Stream { ... }` with a global
+// `TwoWire Wire;` instance pulled the full TwoWire vtable + ctor/dtor + every
+// method into every link, even when the sketch did not call any Wire method.
+// `--gc-sections` could not strip it because the global instance's vtable +
+// dtor (registered via `__cxa_atexit`) anchored everything. On the 64 KB-
+// FLASH LPC845, that alone could tip the link over budget.
+//
+// Trade-off: `TwoWire` is no longer a `Stream` subclass — `Stream& s = Wire;`
+// no longer compiles. Direct `Wire.begin()` / `Wire.write()` calls work as
+// before. Sketches that need polymorphic `Stream*` access to Wire can
+// instantiate a local `TwoWire` (or build the impl directly).
+class TwoWire {
 public:
     void begin(void);
     void begin(uint8_t address);
@@ -20,22 +35,17 @@ public:
     void clearWireTimeoutFlag(void);
 
     void beginTransmission(uint8_t address);
-    size_t write(uint8_t data) override;
-    size_t write(const uint8_t *data, size_t quantity) override;
+    size_t write(uint8_t data);
+    size_t write(const uint8_t *data, size_t quantity);
     uint8_t endTransmission(void);
     uint8_t endTransmission(bool stopBit);
     uint8_t requestFrom(uint8_t address, uint8_t quantity);
     uint8_t requestFrom(uint8_t address, uint8_t quantity, bool stopBit);
 
-    int available(void) override;
-    int read(void) override;
-    int peek(void) override;
-    void flush(void) override;
-
-private:
-    uint8_t _address = 0u;
-    uint32_t _clock = 100000u;
-    bool _timeoutFlag = false;
+    int available(void);
+    int read(void);
+    int peek(void);
+    void flush(void);
 };
 
 extern TwoWire Wire;
