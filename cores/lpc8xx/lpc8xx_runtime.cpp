@@ -58,23 +58,15 @@ __attribute__((noreturn)) void __cxa_pure_virtual(void) {
 // --- operator new / operator new[] -------------------------------------------
 // `-nostartfiles` bare-metal links do not pull libstdc++_nano, so the standard
 // `operator new` / `operator new[]` are unresolved. Provide thin malloc-backed
-// implementations (matching the existing `operator delete` set below). Both
-// sizes are funneled through `malloc`; on a freestanding embedded target we
-// don't throw on allocation failure — callers that need detection should
-// invoke `malloc` directly.
+// implementations (matching the existing `operator delete` set below). The
+// parameter type matches `size_t`, which on this 32-bit ABI is `unsigned int`.
+// On a freestanding embedded target we don't throw on allocation failure —
+// callers that need detection should invoke `malloc` directly.
 void *operator new(unsigned int size) {
     return malloc(size);
 }
 
-void *operator new(unsigned long size) {
-    return malloc(size);
-}
-
 void *operator new[](unsigned int size) {
-    return malloc(size);
-}
-
-void *operator new[](unsigned long size) {
     return malloc(size);
 }
 
