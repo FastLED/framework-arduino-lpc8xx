@@ -9,6 +9,29 @@ SECTIONS
     . = ALIGN(4);
   } > FLASH
 
+  /*
+   * The LPC8xx boot ROM checks the Code-Read-Protection (CRP) word at the
+   * fixed address 0x2FC. The vector table ends at 0xC0 (48 vectors × 4 B),
+   * leaving 0xC0..0x2FC — 564 bytes — that would otherwise be wasted as
+   * 0xFF padding. Pack some sizable, well-isolated symbols into that gap.
+   *
+   * libgcc's `__aeabi_fdiv` (single-precision float division) is ~556 B and
+   * is reliably pulled in by virtually any sketch that touches the C++ STL
+   * or fl:: stack (the JSON-RPC / iostream / `String` formatting paths all
+   * end up referencing it). When it isn't pulled in, the gap stays as 0xFF
+   * padding — no regression.
+   *
+   * If a future sketch adds enough pre-CRP candidates to overflow 0x2FC,
+   * `ld` errors loudly with a section-overlap diagnostic, which is the
+   * intended behavior: the script invariant is "anything placed here MUST
+   * fit before the CRP word."
+   */
+  .text_lower 0xC0 :
+  {
+    KEEP(*(.text.__aeabi_fdiv))
+    . = ALIGN(4);
+  } > FLASH = 0xFF
+
   .crp 0x000002FC :
   {
     KEEP(*(.crp))
