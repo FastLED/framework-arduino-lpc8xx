@@ -30,22 +30,22 @@ SECTIONS
   } > FLASH
 
   /*
-   * ARM exception index. Even on Cortex-M0+ targets that don't unwind,
-   * `-flto` + the `__udivmoddi4`/`__udivdi3` helpers from libgcc emit
-   * `.ARM.exidx.*` records that ld will refuse to merge unless placed
-   * explicitly. Without this section the LMA defaults overlap `.data`
-   * and the link errors with `LMA [...] overlaps section .data LMA [...]`.
+   * Cortex-M0+ doesn't perform stack unwinding, so `.ARM.exidx` records
+   * (emitted by `-flto` + libgcc's `__udivmoddi4`/`__udivdi3` helpers) are
+   * pure dead weight. They were previously placed in `> FLASH` to avoid the
+   * `LMA [...] overlaps .data LMA [...]` link error, but on parts where
+   * `.text` already fills most of flash (e.g. 64 KB LPC845) that placement
+   * pushes `.data` past the end of flash. Discard them entirely instead.
    */
-  .ARM.exidx :
+  /DISCARD/ :
   {
-    __exidx_start = .;
-    *(.ARM.exidx* .gnu.linkonce.armexidx.*)
-    __exidx_end = .;
-  } > FLASH
+    *(.ARM.exidx*)
+    *(.gnu.linkonce.armexidx.*)
+  }
 
   _sidata = LOADADDR(.data);
 
-  .data : AT(_etext + SIZEOF(.ARM.exidx))
+  .data : AT(_etext)
   {
     . = ALIGN(4);
     _sdata = .;
