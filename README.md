@@ -120,8 +120,46 @@ manifests are auto-discovered from `boards/` (default `boards_dir`).
 | `platform.txt` | GCC compile/link recipes, binary/hex output, OpenOCD upload recipe |
 | `programmers.txt` | CMSIS-DAP/OpenOCD default and manual ISP fallback |
 | `linker_scripts/gcc/*.ld` | LPC804/LPC845 flash and RAM layouts |
-| `cores/lpc8xx/startup_lpc8xx.c` | Reset handler, data/BSS init, constructors, CRP word |
+| `cores/lpc8xx/startup_lpc8xx.c` | Reset handler, data/BSS init, constructors, CRP word, HardFault/NMI fault-emit handlers |
 | `tools/lpc8xx_image_check.py` | Vector checksum and CRP validator |
+
+## Fault diagnostics (HardFault / NMI)
+
+By default the core overrides `HardFault_Handler` and `NMI_Handler` with a
+synchronous fault emitter (see `cores/lpc8xx/startup_lpc8xx.c`). On any
+Cortex-M0+ HardFault or NMI the chip will:
+
+1. Read the saved exception frame off MSP and capture `PC`, `LR`, `xPSR`
+   (ARMv6-M B1.5.4 layout).
+2. Emit `\r\nFAULT: HardFault PC=0x... LR=0x... xPSR=0x...\r\n` directly to
+   `USART0->TXDAT` via a polled `STAT.TXIDLE` write loop — no `printf`, no
+   `Serial.print`, no allocator. Those code paths may themselves be broken
+   if the crash originated in the heap or USART driver.
+3. Spin ~1 ms so the on-board USB-VCOM bridge (e.g. LPC11U35 on LPC845-BRK)
+   drains its FIFO before the chip resets.
+4. Reboot via `AIRCR.SYSRESETREQ`, returning the board to a known boot state
+   instead of leaving the host's serial monitor staring at a silent hang.
+
+This replaces the previous behavior, where `HardFault_Handler` was a weak
+alias to the silent `Default_Handler` infinite-loop and any fault produced
+zero diagnostic output until an external reset.
+
+**Assumptions:** the fault emitter assumes `USART0` was initialized via
+`Serial.begin(...)` with default pins. If the application uses a different
+UART, or if you want the original silent behavior (e.g. paired with an
+external watchdog, or to keep the line clear during debugger sessions),
+opt out at build time:
+
+```ini
+; platformio.ini -- restore the original silent Default_Handler behavior
+build_flags = -DARDUINOCORE_LPC8XX_NO_FAULT_EMIT=1
+```
+
+Or pass `-DARDUINOCORE_LPC8XX_NO_FAULT_EMIT=1` via `build.extra_flags` /
+`compiler.c.extra_flags` for the Arduino CLI path.
+
+Total flash cost for the emit path is roughly 200–250 B (handlers + helpers
++ format-string literals), well under the 300 B budget.
 
 The LPC vector checksum word at offset `0x1c` is emitted by the linker script.
 The CRP word is placed at `0x2fc` with the safe erased value `0xffffffff`.

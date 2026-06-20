@@ -24,11 +24,91 @@ void Default_Handler(void) {
 
 // Forward declarations for exception handlers
 void Reset_Handler(void);
+#if defined(ARDUINOCORE_LPC8XX_NO_FAULT_EMIT) && ARDUINOCORE_LPC8XX_NO_FAULT_EMIT
 void NMI_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void HardFault_Handler(void) __attribute__((weak, alias("Default_Handler")));
+#else
+void NMI_Handler(void);
+void HardFault_Handler(void);
+#endif
 void SVC_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void PendSV_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void SysTick_Handler(void) __attribute__((weak, alias("Default_Handler")));
+
+#if !(defined(ARDUINOCORE_LPC8XX_NO_FAULT_EMIT) && ARDUINOCORE_LPC8XX_NO_FAULT_EMIT)
+/* ---------------------------------------------------------------------------
+ * Fault diagnostic emitter (issue #30).
+ *
+ * Replaces the silent Default_Handler infinite-loop for HardFault and NMI with
+ * a direct USART0 sync-write of the saved exception frame's PC, LR, xPSR,
+ * followed by a software reset via AIRCR.SYSRESETREQ. No printf, no Serial,
+ * no allocator -- those paths may themselves be broken if we got here from a
+ * heap fault or USART driver fault.
+ *
+ * Opt out with -DARDUINOCORE_LPC8XX_NO_FAULT_EMIT=1 (build.extra_flags) to
+ * restore the original Default_Handler weak-alias (silent loop) behavior.
+ *
+ * Refs:
+ *   - ARMv6-M Architecture Reference Manual B1.5.4 (exception stack frame).
+ *   - LPC845 user manual UM11029 ch.13 (USART register map).
+ * --------------------------------------------------------------------------- */
+
+static void fault_emit_byte(char c) {
+    /* STAT.TXIDLE (bit 3) -- wait for the previous byte to leave the shift
+       register before we overwrite TXDAT. Using TXIDLE rather than TXRDY
+       guarantees the line is fully drained on the final byte before reset. */
+    while (!(LPC8XX_USART0->STAT & (1u << 3))) {
+    }
+    LPC8XX_USART0->TXDAT = (uint32_t)(uint8_t)c;
+}
+
+static void fault_emit_str(const char *s) {
+    while (*s) {
+        fault_emit_byte(*s++);
+    }
+}
+
+static void fault_emit_hex32(uint32_t v) {
+    for (int i = 28; i >= 0; i -= 4) {
+        const uint32_t nyb = (v >> i) & 0xFu;
+        fault_emit_byte((char)(nyb < 10u ? ('0' + nyb) : ('A' + nyb - 10u)));
+    }
+}
+
+void HardFault_Handler(void) {
+    /* Read MSP and grab the saved exception frame.
+       Layout (ARMv6-M B1.5.4):
+         sp[0]=R0  sp[1]=R1  sp[2]=R2   sp[3]=R3
+         sp[4]=R12 sp[5]=LR  sp[6]=PC   sp[7]=xPSR */
+    uint32_t *msp;
+    __asm volatile ("MRS %0, MSP" : "=r"(msp));
+    const uint32_t pc  = msp[6];
+    const uint32_t lr  = msp[5];
+    const uint32_t psr = msp[7];
+
+    fault_emit_str("\r\nFAULT: HardFault PC=0x");
+    fault_emit_hex32(pc);
+    fault_emit_str(" LR=0x");
+    fault_emit_hex32(lr);
+    fault_emit_str(" xPSR=0x");
+    fault_emit_hex32(psr);
+    fault_emit_str("\r\n");
+
+    /* Drain spin -- ~1 ms at 30 MHz to let the LPC11U35 USB-VCOM bridge
+       on LPC845-BRK flush its FIFO before the chip resets. */
+    for (volatile int i = 0; i < 30000; ++i) {
+        __asm volatile ("nop");
+    }
+
+    /* AIRCR.SYSRESETREQ -- software reset back to a known boot state. */
+    *(volatile uint32_t *)0xE000ED0Cu = (0x05FAu << 16) | (1u << 2);
+    for (;;) {
+    }
+}
+
+/* NMI gets the same emit + reboot path as HardFault. */
+void NMI_Handler(void) __attribute__((alias("HardFault_Handler")));
+#endif /* !ARDUINOCORE_LPC8XX_NO_FAULT_EMIT */
 
 // External symbols from linker script
 extern void _vStackTop(void);
