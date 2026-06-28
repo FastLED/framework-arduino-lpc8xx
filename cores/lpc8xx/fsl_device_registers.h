@@ -14,3 +14,10 @@
 #else
 #error "No supported LPC8xx part selected"
 #endif
+
+// Backward-compat: pull in the Arduino-flavored register shims after the
+// vendor CMSIS PAL. lpc8xx_registers.h provides LPC8XX_SYSCON / LPC8XX_SPI0 /
+// LPC8XX_IOCON etc. that user sketches and earlier core revisions depended
+// on. Names do not collide with the vendor's SCT0/DMA0/SYSCON/SPI0/etc.
+// pointer macros, so both sets remain available.
+#include "lpc8xx_registers.h"
