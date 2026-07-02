@@ -167,6 +167,34 @@ pub enum CmsisDapDevice {
         usb_timeout: Duration,
     },
 
+    /// CMSIS-DAP v1 over nusb-driven interrupt endpoints.
+    ///
+    /// The CMSIS-DAP v1 HID transport uses standard interrupt IN/OUT
+    /// endpoints. On Windows, the OS hidapi backend can fail to open
+    /// the HID interface of NXP LPC-Link2 composite devices (interface
+    /// picker + `HidDevice::open_path` collisions with the usbccgp
+    /// composite driver stack). Reaching the same endpoints through
+    /// nusb via WinUSB bypasses those issues.
+    ///
+    /// FastLED/fbuild#936 — root cause: MCUXpresso uses direct WinUSB,
+    /// not hidapi. Copying that transport choice into probe-rs makes
+    /// the v1.0.7 firmware talk normally, since the DAPLink source
+    /// confirms every DAP handler (`DAP_Info`, `DAP_Connect`, …) is
+    /// unconditionally present.
+    ///
+    /// Unlike the hidapi variant, the OUT buffer here does NOT carry
+    /// a leading `0x00` "no report ID" byte — that padding is a
+    /// Windows-hidapi convention and never reaches the firmware. See
+    /// [`Self::write`] for the compensating adjustment relative to
+    /// the V1 (hidapi) path.
+    V1Nusb {
+        handle: nusb::Interface,
+        out_ep: u8,
+        in_ep: u8,
+        report_size: usize,
+        usb_timeout: Duration,
+    },
+
     /// CMSIS-DAP v2 over WinUSB/Bulk.
     /// Stores an usb device handle, out/in EP addresses, maximum DAP packet size,
     /// and an optional SWO streaming EP address and SWO maximum packet size.
@@ -185,6 +213,7 @@ impl CmsisDapDevice {
         match self {
             #[cfg(feature = "cmsisdap_v1")]
             Self::V1 { usb_timeout, .. } => *usb_timeout,
+            Self::V1Nusb { usb_timeout, .. } => *usb_timeout,
             Self::V2 { usb_timeout, .. } => *usb_timeout,
         }
     }
@@ -193,6 +222,7 @@ impl CmsisDapDevice {
         match self {
             #[cfg(feature = "cmsisdap_v1")]
             Self::V1 { usb_timeout, .. } => *usb_timeout = timeout,
+            Self::V1Nusb { usb_timeout, .. } => *usb_timeout = timeout,
             Self::V2 { usb_timeout, .. } => *usb_timeout = timeout,
         }
     }
@@ -208,6 +238,9 @@ impl CmsisDapDevice {
                     n => Ok(n),
                 }
             }
+            CmsisDapDevice::V1Nusb { handle, in_ep, .. } => {
+                Ok(handle.read_interrupt(*in_ep, buf, self.usb_timeout())?)
+            }
             CmsisDapDevice::V2 { handle, in_ep, .. } => {
                 Ok(handle.read_bulk(*in_ep, buf, self.usb_timeout())?)
             }
@@ -219,6 +252,15 @@ impl CmsisDapDevice {
         match self {
             #[cfg(feature = "cmsisdap_v1")]
             CmsisDapDevice::V1 { handle, .. } => Ok(handle.write(buf)?),
+            CmsisDapDevice::V1Nusb { handle, out_ep, .. } => {
+                // Callers prepend a leading 0x00 "no report ID" byte
+                // because the hidapi (V1) path requires it on Windows.
+                // The firmware itself expects the DAP command ID as
+                // the first byte, so drop the leading 0x00 for the
+                // nusb interrupt-OUT path — this is the same
+                // adjustment V2 makes for its bulk-OUT path.
+                Ok(handle.write_interrupt(*out_ep, &buf[1..], self.usb_timeout())?)
+            }
             CmsisDapDevice::V2 { handle, out_ep, .. } => {
                 // Skip first byte as it's set to 0 for HID transfers
                 Ok(handle.write_bulk(*out_ep, &buf[1..], self.usb_timeout())?)
@@ -246,6 +288,21 @@ impl CmsisDapDevice {
                 }
             },
 
+            CmsisDapDevice::V1Nusb {
+                handle,
+                in_ep,
+                report_size,
+                ..
+            } => {
+                let timeout = Duration::from_millis(1);
+                let mut discard = vec![0u8; *report_size];
+                loop {
+                    match handle.read_interrupt(*in_ep, &mut discard, timeout) {
+                        Ok(n) if n != 0 => continue,
+                        _ => break,
+                    }
+                }
+            }
             CmsisDapDevice::V2 {
                 handle,
                 in_ep,
@@ -273,6 +330,9 @@ impl CmsisDapDevice {
         match self {
             #[cfg(feature = "cmsisdap_v1")]
             CmsisDapDevice::V1 { report_size, .. } => {
+                *report_size = packet_size;
+            }
+            CmsisDapDevice::V1Nusb { report_size, .. } => {
                 *report_size = packet_size;
             }
             CmsisDapDevice::V2 {
@@ -353,6 +413,7 @@ impl CmsisDapDevice {
         match self {
             #[cfg(feature = "cmsisdap_v1")]
             CmsisDapDevice::V1 { .. } => false,
+            CmsisDapDevice::V1Nusb { .. } => false,
             CmsisDapDevice::V2 { swo_ep, .. } => swo_ep.is_some(),
         }
     }
@@ -366,6 +427,7 @@ impl CmsisDapDevice {
         match self {
             #[cfg(feature = "cmsisdap_v1")]
             CmsisDapDevice::V1 { .. } => Err(CmsisDapError::SwoModeNotAvailable),
+            CmsisDapDevice::V1Nusb { .. } => Err(CmsisDapError::SwoModeNotAvailable),
             CmsisDapDevice::V2 { handle, swo_ep, .. } => match swo_ep {
                 Some((ep, len)) => {
                     let mut buf = vec![0u8; *len];
@@ -479,6 +541,7 @@ fn send_command_inner<Req: Request>(
     let buffer_len: usize = match device {
         #[cfg(feature = "cmsisdap_v1")]
         CmsisDapDevice::V1 { report_size, .. } => *report_size + 1,
+        CmsisDapDevice::V1Nusb { report_size, .. } => *report_size + 1,
         CmsisDapDevice::V2 {
             max_packet_size, ..
         } => *max_packet_size + 1,
@@ -487,7 +550,7 @@ fn send_command_inner<Req: Request>(
 
     // Leave byte 0 as the HID report, and write the command and request to the buffer.
     buffer[1] = Req::COMMAND_ID as u8;
-    #[cfg_attr(not(feature = "cmsisdap_v1"), allow(unused_mut))]
+    #[allow(unused_mut)]
     let mut size = request.to_bytes(&mut buffer[2..])? + 2;
 
     // For HID devices we must write a full report every time,
@@ -496,6 +559,13 @@ fn send_command_inner<Req: Request>(
     // write the exact required size every time.
     #[cfg(feature = "cmsisdap_v1")]
     if let CmsisDapDevice::V1 { report_size, .. } = device {
+        size = *report_size + 1;
+    }
+    // V1Nusb also uses a fixed report-sized transfer per CMSIS-DAP v1
+    // HID conventions — the firmware won't parse a short packet
+    // correctly on some implementations. The leading 0x00 byte is
+    // trimmed in [`CmsisDapDevice::write`] before hitting the wire.
+    if let CmsisDapDevice::V1Nusb { report_size, .. } = device {
         size = *report_size + 1;
     }
 

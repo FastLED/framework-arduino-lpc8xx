@@ -185,6 +185,162 @@ fn get_cmsisdap_hid_info(device: &hidapi::DeviceInfo) -> Option<DebugProbeInfo> 
     }
 }
 
+/// Attempt to open the given device as a CMSIS-DAP v1 probe over
+/// nusb (WinUSB on Windows, usbfs on Linux, IOKit on macOS) rather
+/// than hidapi.
+///
+/// FastLED/fbuild#936. Composite CMSIS-DAP devices — most notably NXP
+/// LPC-Link2 (`1FC9:0090` / `1FC9:0132`) — expose the DAP HID as one
+/// interface in a multi-interface composite that also carries a CDC
+/// UART bridge. On Windows, hidapi's interface picker + the usbccgp
+/// composite driver stack combine to prevent it from opening the DAP
+/// HID at all. MCUXpresso works because it uses WinUSB directly.
+/// This function does the same via nusb.
+///
+/// The function scans the device's interfaces for one that has an
+/// interrupt IN + interrupt OUT endpoint pair on the CMSIS-DAP HID
+/// interface (class `0x03`) and returns a
+/// [`CmsisDapDevice::V1Nusb`] wrapping it.
+pub fn open_v1_nusb_device(
+    device_info: &DeviceInfo,
+    selected_interface: Option<u8>,
+) -> Result<Option<CmsisDapDevice>, ProbeCreationError> {
+    let vid = device_info.vendor_id();
+    let pid = device_info.product_id();
+
+    tracing::trace!(
+        "Trying to open {:04x}:{:04x} in cmsis-dap v1 mode via nusb (bypassing hidapi)",
+        vid,
+        pid
+    );
+
+    let device = match device_info.open().wait() {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::debug!(
+                vendor_id = %format!("{vid:04x}"),
+                product_id = %format!("{pid:04x}"),
+                error = %e,
+                "failed to open device for CMSIS-DAP v1 via nusb"
+            );
+            return Ok(None);
+        }
+    };
+
+    let Some(c_desc) = device.configurations().next() else {
+        tracing::trace!("No configurations exposed by device");
+        return Ok(None);
+    };
+
+    for interface in c_desc.interfaces() {
+        if let Some(iface) = selected_interface
+            && interface.interface_number() != iface
+        {
+            continue;
+        }
+
+        for i_desc in interface.alt_settings() {
+            // CMSIS-DAP v1 lives on a HID interface (class 0x03).
+            if i_desc.class() != USB_CLASS_HID {
+                continue;
+            }
+
+            // Skip interfaces that don't LOOK like a CMSIS-DAP surface
+            // on the parent device. On NXP LPC-Link2 the v1.0.7
+            // firmware doesn't populate a per-interface string; fall
+            // back to matching by product string in that case.
+            let interface_str = device_info
+                .interfaces()
+                .find(|i| i.interface_number() == interface.interface_number())
+                .and_then(|i| i.interface_string());
+            let product_string = device_info.product_string().unwrap_or("");
+            let looks_like_dap =
+                interface_str.is_some_and(is_cmsis_dap) || is_cmsis_dap(product_string);
+            if !looks_like_dap {
+                continue;
+            }
+
+            let eps: Vec<_> = i_desc.endpoints().collect();
+            if eps.len() < 2 {
+                continue;
+            }
+
+            // Find one interrupt-OUT and one interrupt-IN endpoint.
+            let mut out_ep = None;
+            let mut in_ep = None;
+            let mut max_packet_size = 64usize;
+            for ep in &eps {
+                if ep.transfer_type() != TransferType::Interrupt {
+                    continue;
+                }
+                match ep.direction() {
+                    Direction::Out => {
+                        out_ep = Some(ep.address());
+                        max_packet_size = max_packet_size.max(ep.max_packet_size());
+                    }
+                    Direction::In => {
+                        in_ep = Some(ep.address());
+                        max_packet_size = max_packet_size.max(ep.max_packet_size());
+                    }
+                }
+            }
+
+            let (Some(out_ep), Some(in_ep)) = (out_ep, in_ep) else {
+                tracing::trace!(
+                    "Interface {} HID class but no interrupt IN+OUT pair; skipping",
+                    interface.interface_number()
+                );
+                continue;
+            };
+
+            match device.claim_interface(interface.interface_number()).wait() {
+                Ok(handle) => {
+                    tracing::debug!(
+                        "Opening {:04x}:{:04x} in CMSIS-DAP v1 mode over nusb (interface {}, out_ep {:#x}, in_ep {:#x}, mps {})",
+                        vid, pid, interface.interface_number(), out_ep, in_ep, max_packet_size
+                    );
+                    reject_probe_by_version(
+                        device_info.vendor_id(),
+                        device_info.product_id(),
+                        device_info.device_version(),
+                    )?;
+                    return Ok(Some(CmsisDapDevice::V1Nusb {
+                        handle,
+                        out_ep,
+                        in_ep,
+                        // CMSIS-DAP v1 HID report size is fixed to the
+                        // endpoint max_packet_size on almost every
+                        // conforming probe; the exact size gets
+                        // negotiated by `find_packet_size()` at the
+                        // start of the session.
+                        report_size: max_packet_size,
+                        usb_timeout: DEFAULT_USB_TIMEOUT,
+                    }));
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        interface = interface.interface_number(),
+                        error = %e,
+                        "failed to claim CMSIS-DAP v1 HID interface via nusb"
+                    );
+                    // Don't `continue` — if we saw the right interface
+                    // and couldn't claim it, keep looking, but a claim
+                    // failure on the DAP HID typically means someone
+                    // else has the handle open. Fall through.
+                    continue;
+                }
+            }
+        }
+    }
+
+    tracing::debug!(
+        "Could not open {:04x}:{:04x} in CMSIS-DAP v1 mode via nusb",
+        vid,
+        pid
+    );
+    Ok(None)
+}
+
 /// Attempt to open the given device in CMSIS-DAP v2 mode
 pub fn open_v2_device(
     device_info: &DeviceInfo,
@@ -387,12 +543,27 @@ pub fn open_device_from_selector(
                     // attempt to open the device in v2 mode.
                     if let Some(device) = open_v2_device(&device, device_info.interface)? {
                         return Ok(device);
-                    } else {
-                        #[cfg(feature = "cmsisdap_v1")]
-                        {
-                            // Otherwise, save as a potential CMSIS-DAP v1 HID device and continue.
-                            hid_device_info = Some(device_info);
-                        }
+                    }
+
+                    // FastLED/fbuild#936. Before falling back to
+                    // hidapi (which cannot open composite CMSIS-DAP
+                    // HID interfaces on Windows for e.g. NXP
+                    // LPC-Link2 debuggers), try to open the v1 HID
+                    // interface directly through nusb. This is the
+                    // same USB stack MCUXpresso uses and it bypasses
+                    // hidapi's Windows interface picker.
+                    if device_info.is_hid_interface
+                        && let Some(handle) =
+                            open_v1_nusb_device(&device, device_info.interface)?
+                    {
+                        return Ok(handle);
+                    }
+
+                    #[cfg(feature = "cmsisdap_v1")]
+                    {
+                        // Otherwise, save as a potential CMSIS-DAP v1 HID
+                        // device and continue — hidapi fallback below.
+                        hid_device_info = Some(device_info);
                     }
                 }
 
@@ -435,26 +606,40 @@ pub fn open_device_from_selector(
             .find(|info| {
                 let mut device_match = info.vendor_id() == vid && info.product_id() == pid;
 
+                tracing::trace!(
+                    "hidapi candidate: {:04x}:{:04x} interface_number={} usage_page={:04x} usage={:04x} path={:?}",
+                    info.vendor_id(),
+                    info.product_id(),
+                    info.interface_number(),
+                    info.usage_page(),
+                    info.usage(),
+                    info.path(),
+                );
+
                 if let Some(sn) = sn {
                     device_match &= Some(sn) == info.serial_number();
                 }
 
-                // FastLED/fbuild#935: NXP LPC-Link2 composite devices expose
-                // CMSIS-DAP on HID interface 0 only. The other HID interfaces
-                // are UART bridge / SWO sink and will `hid_open()` fine but
-                // time out on every DAP command (silent drop). Without an
-                // upstream interface descriptor to filter by, probe-rs's
-                // hidapi fallback path can pick any of them at random —
-                // that's why `DAP_Connect` timed out against v1.0.7 firmware
-                // (VID 0x1FC9 / PID 0x0132 on the LPC845-BRK).
+                // FastLED/fbuild#935: NXP LPC-Link2 composite quirk.
                 //
-                // Mirrors OpenOCD's quirk at cmsis_dap_usb_hid.c:107-109
-                // (originally for PID 0x0090, extended here to 0x0132 for
-                // the LPC845-BRK's v1.0.7 variant firmware).
-                if info.vendor_id() == 0x1fc9
-                    && matches!(info.product_id(), 0x0090 | 0x0132)
-                    && info.interface_number() != 0
-                {
+                // The device exposes CMSIS-DAP on HID interface 0
+                // plus a UART-bridge / SWO sink on other interfaces
+                // that will `hid_open()` fine but silently drop every
+                // DAP command. Mirrors OpenOCD's guard at
+                // cmsis_dap_usb_hid.c:107-109 (PID 0x0090 upstream;
+                // extended here to 0x0132 for the LPC845-BRK v1.0.7
+                // firmware variant).
+                //
+                // On Windows, hidapi cannot always determine
+                // interface_number for a composite HID and returns -1.
+                // Since only the DAP HID gets enumerated by hidapi on
+                // Windows (the CDC parts of the composite aren't HID
+                // and don't show up here at all), a -1 reading is
+                // safe to accept.
+                let is_lpc_link2 = info.vendor_id() == 0x1fc9
+                    && matches!(info.product_id(), 0x0090 | 0x0132);
+
+                if is_lpc_link2 && info.interface_number() > 0 {
                     return false;
                 }
 
@@ -462,15 +647,30 @@ pub fn open_device_from_selector(
                     .as_ref()
                     .and_then(|info| info.interface.filter(|_| info.is_hid_interface))
                 {
-                    device_match &= info.interface_number() == hid_interface as i32;
+                    // Skip the sub-filter for LPC-Link2 when hidapi
+                    // returned -1 — the interface_number > 0 guard
+                    // above already excludes the wrong candidates.
+                    if !(is_lpc_link2 && info.interface_number() < 0) {
+                        device_match &= info.interface_number() == hid_interface as i32;
+                    }
                 }
 
                 device_match
             })
             .ok_or(ProbeCreationError::NotFound)?;
 
-        let Ok(device) = device_info.open_device(&hid_api) else {
-            return Err(ProbeCreationError::NotFound);
+        let device = match device_info.open_device(&hid_api) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::debug!(
+                    vendor_id = %format!("{vid:04x}"),
+                    product_id = %format!("{pid:04x}"),
+                    path = ?device_info.path(),
+                    error = %e,
+                    "hidapi failed to open CMSIS-DAP v1 HID device"
+                );
+                return Err(ProbeCreationError::NotFound);
+            }
         };
 
         match device.get_product_string() {

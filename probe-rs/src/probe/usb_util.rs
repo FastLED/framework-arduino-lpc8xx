@@ -2,7 +2,7 @@
 
 use nusb::{
     Interface,
-    transfer::{Buffer, Bulk, In, Out},
+    transfer::{Buffer, Bulk, In, Interrupt, Out},
 };
 use std::fmt::Write;
 use std::{io, time::Duration};
@@ -22,6 +22,23 @@ pub trait InterfaceExt {
 
     /// Writes data to the given bulk endpoint from the provided buffer.
     fn write_bulk(&self, endpoint: u8, buf: &[u8], timeout: Duration) -> io::Result<usize>;
+
+    /// Reads data from the given interrupt IN endpoint into `buf`.
+    ///
+    /// Semantics match [`InterfaceExt::read_bulk`] — a timeout is
+    /// surfaced as [`io::ErrorKind::TimedOut`] after a cancellation +
+    /// completion drain, and short reads return the actual byte count.
+    fn read_interrupt(&self, endpoint: u8, buf: &mut [u8], timeout: Duration)
+    -> io::Result<usize>;
+
+    /// Writes data to the given interrupt OUT endpoint from `buf`.
+    ///
+    /// Used by the CMSIS-DAP v1 HID transport (FastLED/fbuild#936):
+    /// the LPC-Link2 composite HID that ships on NXP LPC845-BRK cannot
+    /// be opened via hidapi on Windows, but its DAP HID interface has
+    /// standard interrupt IN/OUT endpoints reachable through WinUSB
+    /// via nusb.
+    fn write_interrupt(&self, endpoint: u8, buf: &[u8], timeout: Duration) -> io::Result<usize>;
 }
 
 impl InterfaceExt for Interface {
@@ -98,6 +115,73 @@ impl InterfaceExt for Interface {
 
         buf[..actual_len].copy_from_slice(&data[..actual_len]);
 
+        Ok(actual_len)
+    }
+
+    fn write_interrupt(&self, endpoint: u8, buf: &[u8], timeout: Duration) -> io::Result<usize> {
+        let mut endpoint = self
+            .endpoint::<Interrupt, Out>(endpoint)
+            .map_err(io::Error::from)?;
+
+        let mut transfer_buffer = Buffer::new(buf.len());
+        transfer_buffer.extend_from_slice(buf);
+
+        endpoint.submit(transfer_buffer);
+
+        let Some(completion) = endpoint.wait_next_complete(timeout) else {
+            endpoint.cancel_all();
+            let _ = endpoint.wait_next_complete(Duration::from_millis(100));
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "interrupt write timed out",
+            ));
+        };
+
+        completion.status.map_err(io::Error::from)?;
+        Ok(completion.actual_len)
+    }
+
+    fn read_interrupt(
+        &self,
+        endpoint: u8,
+        buf: &mut [u8],
+        timeout: Duration,
+    ) -> io::Result<usize> {
+        let mut endpoint = self
+            .endpoint::<Interrupt, In>(endpoint)
+            .map_err(io::Error::from)?;
+
+        let max_packet_size = endpoint.max_packet_size().max(1);
+        let requested_len = buf.len().div_ceil(max_packet_size) * max_packet_size;
+
+        let transfer_buffer = Buffer::new(requested_len);
+        endpoint.submit(transfer_buffer);
+
+        let Some(completion) = endpoint.wait_next_complete(timeout) else {
+            endpoint.cancel_all();
+            let _ = endpoint.wait_next_complete(Duration::from_millis(100));
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "interrupt read timed out",
+            ));
+        };
+
+        completion.status.map_err(io::Error::from)?;
+
+        let actual_len = completion.actual_len;
+        let data = completion.buffer;
+
+        if actual_len > buf.len() || data.len() > buf.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "device returned {actual_len} bytes, buffer length is {}",
+                    buf.len()
+                ),
+            ));
+        }
+
+        buf[..actual_len].copy_from_slice(&data[..actual_len]);
         Ok(actual_len)
     }
 }
