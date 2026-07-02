@@ -72,6 +72,17 @@ SECTIONS
   {
     . = ALIGN(4);
     _sdata = .;
+    /*
+     * Functions tagged for RAM execution (FastLED's FL_RAMFUNC ->
+     * __attribute__((section(".ramfunc"))), enabled with -DFASTLED_M0_RAMFUNC).
+     * Collected into .data so they get a FLASH load address (AT(_etext)) and a
+     * RAM run address, and are copied to RAM by the existing _sdata.._edata loop
+     * in Reset_Handler -- no startup change needed. Executing from the 0-wait
+     * SRAM (instead of wait-stated flash) is what lets the cycle-counted M0
+     * clockless WS2812 bit timing hit sub-microsecond pulses on the LPC845.
+     */
+    *(.ramfunc*)
+    . = ALIGN(4);
     *(.data*)
     . = ALIGN(4);
     _edata = .;
