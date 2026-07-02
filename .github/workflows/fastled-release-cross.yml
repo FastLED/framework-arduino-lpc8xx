@@ -30,6 +30,10 @@ name: fastled-release-cross
 on:
   workflow_dispatch: {}
   push:
+    # Build-on-change for the tools branch — every source push runs
+    # the fingerprint check first; identical trees short-circuit to
+    # the cached release, only actual code changes trigger a rebuild.
+    branches: [ "tools" ]
     tags: [ "fastled-v*" ]
 
 permissions:
