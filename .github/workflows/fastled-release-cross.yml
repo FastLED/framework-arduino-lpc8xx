@@ -96,6 +96,14 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Ensure matrix target is installed
+        # rust-toolchain.toml at repo root pins the toolchain but only
+        # declares thumbv7m-none-eabi in its targets list. That pin is
+        # honored by rustup and overrides the `targets:` input above, so
+        # explicitly add the matrix target here.
+        shell: bash
+        run: rustup target add ${{ matrix.target }}
+
       - name: Set up zig (zigbuild lanes)
         if: matrix.zigbuild
         uses: mlugg/setup-zig@v2
