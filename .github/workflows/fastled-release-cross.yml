@@ -36,8 +36,93 @@ permissions:
   contents: write
 
 jobs:
+  # Cheap sentinel: compute a fingerprint of every input that can affect
+  # the compiled binary (probe-rs sources, Cargo.lock, rust-toolchain
+  # pin, and this workflow itself), then check whether a release for
+  # this exact fingerprint already exists on GitHub. When it does we
+  # short-circuit the whole matrix and reuse the previously-published
+  # assets. When it does not, downstream jobs run and their outputs get
+  # tagged with the fingerprint so a future rerun of the same source
+  # tree hits the cache path.
+  fingerprint:
+    name: Compute source fingerprint
+    runs-on: ubuntu-24.04
+    outputs:
+      hash: ${{ steps.hash.outputs.hash }}
+      short: ${{ steps.hash.outputs.short }}
+      release_exists: ${{ steps.check.outputs.exists }}
+      release_url: ${{ steps.check.outputs.url }}
+      release_tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute deterministic hash of build inputs
+        id: hash
+        shell: bash
+        run: |
+          # Every path listed below must hash-stable across identical
+          # source-tree checkouts. Excluded on purpose:
+          #   • `target/` — build output, obviously.
+          #   • `.git/` — commit metadata varies without source change.
+          #   • `.github/**` other than THIS workflow — docs / lint
+          #     files should not force a rebuild.
+          # If you add a new source directory that affects the binary,
+          # add it to this list AND bump the schema version below.
+          # Schema v1: probe-rs + probe-rs-tools + shared support crates
+          # + Cargo.lock + rust-toolchain.toml + this workflow.
+          hash=$(git ls-files -z \
+              'probe-rs/**' \
+              'probe-rs-tools/**' \
+              'probe-rs-target/**' \
+              'probe-rs-mi/**' \
+              'probe-rs-debug/**' \
+              'probe-rs-espressif/**' \
+              'Cargo.lock' \
+              'Cargo.toml' \
+              'rust-toolchain.toml' \
+              '.github/workflows/fastled-release-cross.yml' \
+            | xargs -0 sha256sum \
+            | sort \
+            | sha256sum \
+            | cut -c1-64)
+          # Prefix with the schema version so we can force a cache miss
+          # by bumping it when the set of hashed inputs above changes.
+          full="v1-${hash}"
+          short="${hash:0:12}"
+          echo "hash=${full}" >> "$GITHUB_OUTPUT"
+          echo "short=${short}" >> "$GITHUB_OUTPUT"
+          echo "Computed source fingerprint: ${full}"
+      - name: Check whether a release for this fingerprint exists
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          # Release naming convention: `probe-rs-cache-<fingerprint>`.
+          # Presence of this release means a prior workflow run already
+          # published assets for this exact source tree — reuse them.
+          # Tag-triggered runs ALWAYS publish under the human-readable
+          # tag ALSO, so users still get `fastled-v*` releases.
+          tag="probe-rs-cache-${{ steps.hash.outputs.hash }}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if gh release view "${tag}" --repo "${{ github.repository }}" --json url --jq .url > /tmp/release_url 2>/dev/null; then
+            url=$(cat /tmp/release_url)
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "url=${url}" >> "$GITHUB_OUTPUT"
+            echo "🟢 Cached release found for this source fingerprint: ${url}"
+            echo "🟢 Skipping full cross-compile matrix."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "🟡 No cached release for this source fingerprint — running full matrix."
+          fi
+
   build:
     name: Build ${{ matrix.name }}
+    needs: fingerprint
+    # Skip the whole matrix when a cached release already exists for
+    # this exact source fingerprint. The publish job below re-tags the
+    # cached release under whatever tag triggered THIS run so the
+    # standard `fastled-v*` naming still works.
+    if: needs.fingerprint.outputs.release_exists != 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -103,6 +188,32 @@ jobs:
         # explicitly add the matrix target here.
         shell: bash
         run: rustup target add ${{ matrix.target }}
+
+      - name: Cache Cargo registry + git deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          # Keyed on Cargo.lock so a lockfile change forces a fresh
+          # download. Falls back to any Cargo cache for this OS so a
+          # partial hit still speeds up the majority-unchanged rebuild.
+          key: probe-rs-cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            probe-rs-cargo-registry-${{ runner.os }}-
+
+      - name: Cache build target directory
+        uses: actions/cache@v4
+        with:
+          path: target
+          # Keyed on the full source fingerprint from the `fingerprint`
+          # job PLUS the matrix target — so the target dir is only
+          # reused when the source tree is exactly the same. Fallbacks
+          # match on runner+target for a warm-but-not-hot start.
+          key: probe-rs-target-${{ needs.fingerprint.outputs.hash }}-${{ matrix.target }}
+          restore-keys: |
+            probe-rs-target-${{ matrix.target }}-
 
       - name: Set up zig (zigbuild lanes)
         if: matrix.zigbuild
@@ -223,39 +334,106 @@ jobs:
 
   publish:
     name: Publish release
-    needs: build
+    # Depend on BOTH fingerprint (for the hash/cache decision) and
+    # build. `if: always()` because we still want to run publish when
+    # `build` was skipped (cache hit).
+    needs: [ fingerprint, build ]
+    if: |
+      always() &&
+      needs.fingerprint.result == 'success' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-24.04
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-      - name: Flatten
+
+      # -------- Cache-hit path --------
+      # A prior workflow run for this exact source fingerprint already
+      # published `probe-rs-cache-<hash>` — download those assets and
+      # republish them under whatever tag triggered THIS run (if any).
+      - name: Download cached release assets
+        if: needs.fingerprint.outputs.release_exists == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          find dist -maxdepth 2 -mindepth 2 -type f -exec mv {} dist/ \;
+          mkdir -p dist
+          tag="${{ needs.fingerprint.outputs.release_tag }}"
+          echo "Reusing cached release: ${tag}"
+          gh release download "${tag}" \
+            --repo "${{ github.repository }}" \
+            --dir dist
+          ls -la dist/
+
+      # -------- Fresh-build path --------
+      - name: Download all fresh artifacts
+        if: needs.fingerprint.outputs.release_exists != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          path: dist_raw
+      - name: Flatten fresh artifacts
+        if: needs.fingerprint.outputs.release_exists != 'true'
+        shell: bash
+        run: |
+          mkdir -p dist
+          find dist_raw -maxdepth 2 -mindepth 2 -type f -exec mv {} dist/ \;
           ls -la dist/
       - name: Compute SHA256SUMS
+        if: needs.fingerprint.outputs.release_exists != 'true'
         shell: bash
         run: |
           cd dist
-          # Exclude directories left over from the artifact download tree.
           sha256sum $(find . -maxdepth 1 -type f -not -name SHA256SUMS) > SHA256SUMS
           cat SHA256SUMS
-      - name: Create GitHub Release
+
+      # -------- Always: publish `probe-rs-cache-<hash>` release --------
+      # When we built fresh, this is the primary publish — it becomes
+      # the cache for the next identical source tree. When we hit the
+      # cache, the release already exists and softprops/action-gh-release
+      # no-ops (idempotent on same tag + files).
+      - name: Publish / refresh cache release
+        if: needs.fingerprint.outputs.release_exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.fingerprint.outputs.release_tag }}
+          name: probe-rs cache ${{ needs.fingerprint.outputs.short }}
+          body: |
+            Content-addressable cache release of the FastLED-patched `probe-rs` binaries.
+
+            **Do not consume this release directly** — it exists as the cache backing for the `fastled-v*` releases. The archives under `fastled-v*` are byte-identical.
+
+            Source fingerprint: `${{ needs.fingerprint.outputs.hash }}`
+            Source SHA: `${{ github.sha }}`
+
+            See FastLED/fbuild#935.
+          files: dist/*
+          make_latest: false
+          prerelease: true
+
+      # -------- Publish the human-readable `fastled-v*` release --------
+      # Only fires when the trigger was a `fastled-v*` tag push. Copies
+      # the assets from either the fresh build OR the cached release.
+      - name: Publish tag-triggered release
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: FastLED probe-rs ${{ github.ref_name }}
           body: |
-            Cross-compiled binaries of the FastLED fork of `probe-rs`, with the FastLED-specific patches applied on top of upstream:
+            Cross-compiled binaries of the FastLED-patched `probe-rs` fork.
 
-            - FastLED/probe-rs#1 — `DAP_Info` sub-command fallbacks (packet size, packet count, capabilities) for old/silent CMSIS-DAP v1 firmwares.
-            - FastLED/probe-rs#2 — `DAP_Connect` explicit-SWD + retry.
+            Patches applied on top of upstream `probe-rs/probe-rs`:
+
+            - **`DAP_Info` sub-command fallbacks** — packet size, packet count, and capabilities queries fall back to CMSIS-DAP 2.1.0 spec defaults when the probe firmware drops them silently. Rescues old / incomplete CMSIS-DAP v1 firmware like the NXP LPC-Link2 v1.0.7 that ships on the LPC845-BRK.
+            - **`DAP_Connect` explicit-SWD + retry** — use `ConnectRequest::Swd` (0x01) instead of `DefaultPort` (0x00) when the caller did not pin a protocol, and retry up to 4 times to ride out the "first HID report after enumeration gets dropped" behavior on Windows.
 
             fbuild consumes these under `~/.fbuild/{prod|dev}/tools/probe-rs/probe-rs[.exe]` — see FastLED/fbuild#935.
 
             Every archive contains a `FASTLED-BUILD.txt` file naming the upstream fork commit + the patches applied, and each is checksummed in the `SHA256SUMS` asset.
+
+            Source fingerprint: `${{ needs.fingerprint.outputs.hash }}`
+
+            When this fingerprint has been published before, the assets in this release are the byte-identical cache hit from `probe-rs-cache-${{ needs.fingerprint.outputs.short }}`.
           files: dist/*
+          make_latest: true
