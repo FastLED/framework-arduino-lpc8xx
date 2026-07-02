@@ -439,6 +439,25 @@ pub fn open_device_from_selector(
                     device_match &= Some(sn) == info.serial_number();
                 }
 
+                // FastLED/fbuild#935: NXP LPC-Link2 composite devices expose
+                // CMSIS-DAP on HID interface 0 only. The other HID interfaces
+                // are UART bridge / SWO sink and will `hid_open()` fine but
+                // time out on every DAP command (silent drop). Without an
+                // upstream interface descriptor to filter by, probe-rs's
+                // hidapi fallback path can pick any of them at random —
+                // that's why `DAP_Connect` timed out against v1.0.7 firmware
+                // (VID 0x1FC9 / PID 0x0132 on the LPC845-BRK).
+                //
+                // Mirrors OpenOCD's quirk at cmsis_dap_usb_hid.c:107-109
+                // (originally for PID 0x0090, extended here to 0x0132 for
+                // the LPC845-BRK's v1.0.7 variant firmware).
+                if info.vendor_id() == 0x1fc9
+                    && matches!(info.product_id(), 0x0090 | 0x0132)
+                    && info.interface_number() != 0
+                {
+                    return false;
+                }
+
                 if let Some(hid_interface) = hid_device_info
                     .as_ref()
                     .and_then(|info| info.interface.filter(|_| info.is_hid_interface))
