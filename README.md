@@ -129,9 +129,11 @@ By default the core overrides `HardFault_Handler` and `NMI_Handler` with a
 synchronous fault emitter (see `cores/lpc8xx/startup_lpc8xx.c`). On any
 Cortex-M0+ HardFault or NMI the chip will:
 
-1. Read the saved exception frame off MSP and capture `PC`, `LR`, `xPSR`
-   (ARMv6-M B1.5.4 layout).
-2. Emit `\r\nFAULT: HardFault PC=0x... LR=0x... xPSR=0x...\r\n` directly to
+1. Locate the saved exception frame before any C prologue touches the stack:
+   a naked trampoline picks MSP or PSP from `EXC_RETURN` bit 2 and passes the
+   frame to the C reporter, which reads the faulting `PC`, `LR` and `xPSR`.
+2. Emit `\r\nFAULT: HardFault PC=0x... LR=0x... xPSR=0x... EXC_RETURN=0x...\r\n`
+   (`FAULT: NMI ...` when the exception is the NMI) directly to
    `USART0->TXDAT` via a polled `STAT.TXIDLE` write loop — no `printf`, no
    `Serial.print`, no allocator. Those code paths may themselves be broken
    if the crash originated in the heap or USART driver.
