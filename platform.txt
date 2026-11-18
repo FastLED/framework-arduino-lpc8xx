@@ -33,9 +33,14 @@ compiler.elf2hex.extra_flags=
 compiler.libraries.ldflags=
 build.extra_flags=
 
-recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} -DF_CPU={build.f_cpu} -DARDUINO={runtime.ide.version} -DARDUINO_{build.board} -DARDUINO_ARCH_LPC8XX {compiler.c.extra_flags} {build.extra_flags} {includes} "{source_file}" -o "{object_file}"
-recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} -DF_CPU={build.f_cpu} -DARDUINO={runtime.ide.version} -DARDUINO_{build.board} -DARDUINO_ARCH_LPC8XX {compiler.cpp.extra_flags} {build.extra_flags} {includes} "{source_file}" -o "{object_file}"
-recipe.S.o.pattern="{compiler.path}{compiler.S.cmd}" {compiler.S.flags} -DF_CPU={build.f_cpu} -DARDUINO={runtime.ide.version} -DARDUINO_{build.board} -DARDUINO_ARCH_LPC8XX {compiler.S.extra_flags} {build.extra_flags} {includes} "{source_file}" -o "{object_file}"
+# Vendor CMSIS PAL (variants/<family>/LPC8xx.h) and CMSIS-Core (CMSIS/), which
+# the core includes through fsl_device_registers.h. A board variant directory
+# (e.g. variants/lpc845brk) is not the family directory that ships the PAL.
+compiler.lpc8xx.cmsis_includes="-I{runtime.platform.path}/variants/{build.lpc_family}" "-I{runtime.platform.path}/CMSIS"
+
+recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} -DF_CPU={build.f_cpu} -DARDUINO={runtime.ide.version} -DARDUINO_{build.board} -DARDUINO_ARCH_LPC8XX {compiler.c.extra_flags} {build.extra_flags} {includes} {compiler.lpc8xx.cmsis_includes} "{source_file}" -o "{object_file}"
+recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} -DF_CPU={build.f_cpu} -DARDUINO={runtime.ide.version} -DARDUINO_{build.board} -DARDUINO_ARCH_LPC8XX {compiler.cpp.extra_flags} {build.extra_flags} {includes} {compiler.lpc8xx.cmsis_includes} "{source_file}" -o "{object_file}"
+recipe.S.o.pattern="{compiler.path}{compiler.S.cmd}" {compiler.S.flags} -DF_CPU={build.f_cpu} -DARDUINO={runtime.ide.version} -DARDUINO_{build.board} -DARDUINO_ARCH_LPC8XX {compiler.S.extra_flags} {build.extra_flags} {includes} {compiler.lpc8xx.cmsis_includes} "{source_file}" -o "{object_file}"
 
 recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} {compiler.ar.extra_flags} "{archive_file_path}" "{object_file}"
 

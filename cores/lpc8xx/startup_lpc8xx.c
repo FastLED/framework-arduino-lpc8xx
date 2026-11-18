@@ -40,10 +40,10 @@ void SysTick_Handler(void) __attribute__((weak, alias("Default_Handler")));
  * Fault diagnostic emitter (issue #30).
  *
  * Replaces the silent Default_Handler infinite-loop for HardFault and NMI with
- * a direct USART0 sync-write of the saved exception frame's PC, LR, xPSR,
- * followed by a software reset via AIRCR.SYSRESETREQ. No printf, no Serial,
- * no allocator -- those paths may themselves be broken if we got here from a
- * heap fault or USART driver fault.
+ * a direct USART0 sync-write of the saved exception frame's PC, LR, xPSR and
+ * the EXC_RETURN value, followed by a software reset via AIRCR.SYSRESETREQ.
+ * No printf, no Serial, no allocator -- those paths may themselves be broken
+ * if we got here from a heap fault or USART driver fault.
  *
  * Opt out with -DARDUINOCORE_LPC8XX_NO_FAULT_EMIT=1 (build.extra_flags) to
  * restore the original Default_Handler weak-alias (silent loop) behavior.
@@ -75,23 +75,26 @@ static void fault_emit_hex32(uint32_t v) {
     }
 }
 
-void HardFault_Handler(void) {
-    /* Read MSP and grab the saved exception frame.
-       Layout (ARMv6-M B1.5.4):
-         sp[0]=R0  sp[1]=R1  sp[2]=R2   sp[3]=R3
-         sp[4]=R12 sp[5]=LR  sp[6]=PC   sp[7]=xPSR */
-    uint32_t *msp;
-    __asm volatile ("MRS %0, MSP" : "=r"(msp));
-    const uint32_t pc  = msp[6];
-    const uint32_t lr  = msp[5];
-    const uint32_t psr = msp[7];
+/* C reporter, entered from the naked HardFault_Handler trampoline below with
+   r0 = the exception stack frame (ARMv6-M ARM, exception entry) and
+   r1 = EXC_RETURN.
+     frame[0]=R0  frame[1]=R1  frame[2]=R2   frame[3]=R3
+     frame[4]=R12 frame[5]=LR  frame[6]=PC   frame[7]=xPSR
+   IPSR names the exception: 2 = NMI, 3 = HardFault. */
+__attribute__((used, noreturn, noinline))
+void lpc8xx_fault_report(const uint32_t *frame, uint32_t exc_return) {
+    uint32_t ipsr;
+    __asm volatile ("MRS %0, IPSR" : "=r"(ipsr));
 
-    fault_emit_str("\r\nFAULT: HardFault PC=0x");
-    fault_emit_hex32(pc);
+    fault_emit_str((ipsr & 0x3Fu) == 2u ? "\r\nFAULT: NMI PC=0x"
+                                         : "\r\nFAULT: HardFault PC=0x");
+    fault_emit_hex32(frame[6]);
     fault_emit_str(" LR=0x");
-    fault_emit_hex32(lr);
+    fault_emit_hex32(frame[5]);
     fault_emit_str(" xPSR=0x");
-    fault_emit_hex32(psr);
+    fault_emit_hex32(frame[7]);
+    fault_emit_str(" EXC_RETURN=0x");
+    fault_emit_hex32(exc_return);
     fault_emit_str("\r\n");
 
     /* Drain spin -- ~1 ms at 30 MHz to let the LPC11U35 USB-VCOM bridge
@@ -104,6 +107,31 @@ void HardFault_Handler(void) {
     *(volatile uint32_t *)0xE000ED0Cu = (0x05FAu << 16) | (1u << 2);
     for (;;) {
     }
+}
+
+/* Naked trampoline: no prologue may touch the stack before the frame is
+   located, or the frame pointer is off by whatever the prologue pushed
+   (issue #41). EXC_RETURN bit 2 picks the stack the hardware stacked to:
+   0 = MSP, 1 = PSP. Cortex-M0+ (Thumb-1) has no ITE or TST-immediate, so
+   test the bit through a register. The reporter is reached with a long
+   branch (ldr + bx) because it may be out of B range. */
+__attribute__((naked))
+void HardFault_Handler(void) {
+    __asm volatile (
+        "movs r0, #4                 \n"
+        "mov  r1, lr                 \n"
+        "tst  r0, r1                 \n"
+        "bne  1f                     \n"
+        "mrs  r0, msp                \n"
+        "b    2f                     \n"
+        "1:                          \n"
+        "mrs  r0, psp                \n"
+        "2:                          \n"
+        "ldr  r2, 3f                 \n"
+        "bx   r2                     \n"
+        ".align 2                    \n"
+        "3: .word lpc8xx_fault_report \n"
+    );
 }
 
 /* NMI gets the same emit + reboot path as HardFault. Weak so a sketch or
